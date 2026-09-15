@@ -51,6 +51,27 @@ footer{color:var(--grey);font-size:11px;text-align:center;padding:24px;border-to
 <div class="wrap">
   <div class="hero"><div class="eyebrow">Demo Activity</div><h1>Product Demo — Activity Log</h1>
     <p>Capture a product demo. Lighter than a POC — high-level highlights only, no customer sign-off.</p></div>
+
+  <div id="chooser" style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px">
+    <b>Demo Activity</b>
+    <p class="sub" style="margin:6px 0 14px;text-align:left">Start a new demo activity, or retrieve one submitted earlier (by customer email).</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button class="primary" type="button" style="padding:14px 22px;font-size:15px" onclick="startNewDemo()">&#43; New Demo</button>
+      <button class="ghost" type="button" style="padding:14px 22px;font-size:15px" onclick="showRetrieve()">&#128193; Retrieve Existing Demo</button>
+    </div>
+  </div>
+
+  <div id="retrievePanel" style="background:#fff;border:1px solid var(--border);border-radius:14px;padding:18px 20px;margin-bottom:16px;display:none">
+    <button class="ghost" type="button" onclick="showChooser()">&#8592; Back</button>
+    <b style="display:block;margin-top:10px">Retrieve Existing Demo</b>
+    <p class="sub" style="margin:6px 0 0;text-align:left">Filter by <b>Customer Email</b>, or pick from your submitted demos below.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px">
+      <input type="email" id="resumeEmail" placeholder="customer@company.com" style="max-width:320px">
+      <button class="ghost" type="button" onclick="filterDemos()">Search</button>
+    </div>
+    <div id="retrieveList" style="margin-top:12px"></div>
+  </div>
+
   <div id="msg" class="msg"></div>
   <form id="demoform">
     <h2>Demo Engagement Details</h2><div class="grid"><div class="fld"><label>Customer / Account name <span class="req">*</span></label><input type="text" name="Customer / Account name" data-k="Customer / Account name" required placeholder=""></div><div class="fld"><label>Customer Email <span class="req">*</span></label><input type="email" name="Customer Email" data-k="Customer Email" required placeholder="used to auto-save your draft on this device"></div><div class="fld"><label>Veeam AM Name</label><input type="text" name="Veeam AM Name" data-k="Veeam AM Name" placeholder=""></div><div class="fld"><label>Veeam SE Name</label><input type="text" name="Veeam SE Name" data-k="Veeam SE Name" placeholder=""></div><div class="fld"><label>Primary customer contact</label><input type="text" name="Primary customer contact" data-k="Primary customer contact" placeholder=""></div><div class="fld"><label>Demo date</label><input type="date" name="Demo date" data-k="Demo date"></div><div class="fld"><label>Demo mode</label><select name="Demo mode" data-k="Demo mode"><option value="">—</option><option>Onsite</option><option>Remote</option><option>Hybrid</option></select></div></div>
@@ -151,7 +172,8 @@ async function sbSaveDemo(){
 const form=document.getElementById("demoform"), msg=document.getElementById("msg");
 function collect(){const o={};form.querySelectorAll('[data-k]').forEach(el=>{o[el.dataset.k]=(el.type==='checkbox')?(el.checked?'Yes':'No'):el.value;});o["Form type"]="Demo Activity";o["_submitted_at"]=new Date().toISOString();return o;}
 function save(){try{localStorage.setItem(KEY,JSON.stringify(collect()));}catch(e){}}
-function restore(){try{const d=JSON.parse(localStorage.getItem(KEY)||"{}");form.querySelectorAll('[data-k]').forEach(el=>{if(d[el.dataset.k]===undefined)return;if(el.type==='checkbox')el.checked=(d[el.dataset.k]==='Yes');else el.value=d[el.dataset.k];});}catch(e){}}
+function populate(d){form.querySelectorAll('[data-k]').forEach(el=>{if(d[el.dataset.k]===undefined)return;if(el.type==='checkbox')el.checked=(d[el.dataset.k]==='Yes');else el.value=d[el.dataset.k];});}
+function restore(){try{populate(JSON.parse(localStorage.getItem(KEY)||"{}"));}catch(e){}}
 function applyScope(){const c=new Set();document.querySelectorAll('.catchk:checked').forEach(cb=>c.add(cb.value));
   document.querySelectorAll('section.product').forEach(s=>{s.style.display=c.has(s.dataset.prod)?'':'none';});
   document.getElementById('noprod').style.display=c.size?'none':'block';}
@@ -172,6 +194,44 @@ async function submitDemo(btn){
   }catch(e){show("Could not reach the server. Please try again.",false);}
   finally{btn.disabled=false;btn.textContent=label;}
 }
-restore();applyScope();applyCompany();
+/* ---- New Demo / Retrieve Existing Demo chooser ---- */
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+const chooserEl=document.getElementById('chooser');
+const retrieveEl=document.getElementById('retrievePanel');
+const barEl=document.querySelector('.bar');
+function setFormVisible(v){form.style.display=v?'':'none';if(barEl)barEl.style.display=v?'':'none';}
+function setReadOnly(v){form.querySelectorAll('input,select,textarea').forEach(function(el){el.disabled=v;});
+  if(barEl)barEl.querySelectorAll('button').forEach(function(b){var t=(b.textContent||'').toLowerCase();b.disabled=v&&!(t.indexOf('print')>=0||t.indexOf('clear')>=0);});}
+function showChooser(){chooserEl.style.display='';retrieveEl.style.display='none';setFormVisible(false);msg.className='msg';msg.textContent='';}
+function startNewDemo(){localStorage.removeItem(KEY);setReadOnly(false);form.reset();applyScope();applyCompany();chooserEl.style.display='none';retrieveEl.style.display='none';setFormVisible(true);msg.className='msg';msg.textContent='';window.scrollTo({top:0,behavior:'smooth'});}
+async function showRetrieve(){chooserEl.style.display='none';setFormVisible(false);retrieveEl.style.display='';await listMyDemos('');}
+function filterDemos(){var e=(document.getElementById('resumeEmail').value||'').trim();listMyDemos(e);}
+async function listMyDemos(filterEmail){
+  var box=document.getElementById('retrieveList');
+  if(!SB){box.innerHTML='<p class="note" style="text-align:left">Online retrieve needs the portal database. Open this form from the portal after signing in.</p>';return;}
+  box.innerHTML='<p class="note" style="text-align:left">Loading…</p>';
+  const {data:{user}}=await SB.auth.getUser();
+  if(!user){box.innerHTML='<p class="note" style="text-align:left">Please sign in to the portal first, then open the Demo template from there.</p>';return;}
+  var res=await SB.from('demo_activities').select('id,customer_name,stage,created_at,payload').eq('user_id',user.id).order('created_at',{ascending:false});
+  if(res.error){box.innerHTML='<p class="note" style="text-align:left">Could not load: '+esc(res.error.message)+'</p>';return;}
+  var rows=res.data||[];
+  if(filterEmail){var f=filterEmail.toLowerCase();rows=rows.filter(function(r){return ((((r.payload&&r.payload["Customer Email"])||'')+'').toLowerCase().indexOf(f)>=0);});}
+  window.__demos=rows;
+  if(!rows.length){box.innerHTML='<p class="note" style="text-align:left">No submitted demos found'+(filterEmail?' for that email':'')+'.</p>';return;}
+  var h='<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th>Customer Email</th><th>Account</th><th>Stage</th><th>Date</th><th></th></tr></thead><tbody>';
+  rows.forEach(function(r){var em=(r.payload&&r.payload["Customer Email"])||'';var up=((r.created_at)||'').slice(0,10);
+    h+='<tr><td>'+esc(em)+'</td><td>'+esc(r.customer_name||'')+'</td><td>'+esc(r.stage||'Completed')+'</td><td>'+esc(up)+'</td><td><button class="ghost" type="button" onclick="openDemo(\''+r.id+'\')">Open</button></td></tr>';});
+  box.innerHTML=h+'</tbody></table>';
+}
+function openDemo(id){
+  var r=(window.__demos||[]).find(function(x){return String(x.id)===String(id);});
+  if(!r)return;
+  setReadOnly(false);form.reset();populate(r.payload||{});applyScope();applyCompany();
+  chooserEl.style.display='none';retrieveEl.style.display='none';setFormVisible(true);setReadOnly(true);
+  show('This demo activity is shown read-only. Use ‘Save / Print as PDF’, or go Back and start a New Demo.',true);
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+applyScope();applyCompany();setFormVisible(false);showChooser();
 </script>
 </body></html>

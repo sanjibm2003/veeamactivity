@@ -114,13 +114,24 @@ body{background:#fff}
     <span class="pill">Save &amp; resume by email &nbsp;·&nbsp; Print to PDF &nbsp;·&nbsp; Submit online</span>
   </div>
 
-  <div class="resume">
-    <b>Resume a saved draft</b>
-    <p class="sub" style="margin:6px 0 0">Continuing a POC you started earlier? Enter the <b>Customer Email</b> you used and load your saved draft.</p>
+  <div id="chooser" class="resume">
+    <b>POC Activity</b>
+    <p class="sub" style="margin:6px 0 14px">Start a brand-new POC, or retrieve one you saved or submitted earlier (by customer email).</p>
+    <div class="resume-row">
+      <button class="primary" type="button" style="padding:14px 22px;font-size:15px" onclick="startNewPOC()">&#43; New POC</button>
+      <button class="ghost" type="button" style="padding:14px 22px;font-size:15px" onclick="showRetrieve()">&#128193; Retrieve Existing POC</button>
+    </div>
+  </div>
+
+  <div id="retrievePanel" class="resume" style="display:none">
+    <button class="ghost" type="button" onclick="showChooser()">&#8592; Back</button>
+    <b style="display:block;margin-top:10px">Retrieve Existing POC</b>
+    <p class="sub" style="margin:6px 0 0">Filter by <b>Customer Email</b>, or pick from your saved &amp; submitted POCs below.</p>
     <div class="resume-row">
       <input type="email" id="resumeEmail" placeholder="customer@company.com">
-      <button class="ghost" type="button" onclick="loadDraft()">Load my draft</button>
+      <button class="ghost" type="button" onclick="filterPOCs()">Search</button>
     </div>
+    <div id="retrieveList" style="margin-top:12px"></div>
   </div>
 
   <div id="msg" class="msg"></div>
@@ -444,6 +455,53 @@ function loadDraft(){
   setTimeout(function(){ if(!done) show("The server did not respond. Please try ‘Load my draft’ again.", false); }, 12000);
 }
 
+/* ---- New POC / Retrieve Existing POC chooser ---- */
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+const chooserEl=document.getElementById('chooser');
+const retrieveEl=document.getElementById('retrievePanel');
+const barEl=document.querySelector('.bar');
+let loadedFinal=false;
+function setFormVisible(v){ form.style.display=v?'':'none'; if(barEl)barEl.style.display=v?'':'none'; }
+function setReadOnly(v){ loadedFinal=v;
+  form.querySelectorAll('input,select,textarea').forEach(function(el){ el.disabled=v; });
+  if(barEl)barEl.querySelectorAll('button').forEach(function(b){ var t=(b.textContent||'').toLowerCase(); b.disabled = v && !(t.indexOf('print')>=0||t.indexOf('clear')>=0); });
+}
+function showChooser(){ chooserEl.style.display=''; retrieveEl.style.display='none'; setFormVisible(false); msg.className='msg'; msg.textContent=''; }
+function startNewPOC(){ localStorage.removeItem(DRAFT_ID_KEY); localStorage.removeItem(KEY); setReadOnly(false); form.reset(); applyScope(); applyCompany(); chooserEl.style.display='none'; retrieveEl.style.display='none'; setFormVisible(true); msg.className='msg'; msg.textContent=''; window.scrollTo({top:0,behavior:'smooth'}); }
+async function showRetrieve(){ chooserEl.style.display='none'; setFormVisible(false); retrieveEl.style.display=''; await listMyPOCs(''); }
+function filterPOCs(){ var e=(document.getElementById('resumeEmail').value||'').trim(); if(SB){ listMyPOCs(e); } else { loadDraft(); } }
+async function listMyPOCs(filterEmail){
+  var box=document.getElementById('retrieveList');
+  if(!SB){ box.innerHTML='<p class="note">Online retrieve needs the portal database. Enter the customer email above and click Search to load your saved draft.</p>'; return; }
+  box.innerHTML='<p class="note">Loading…</p>';
+  var s=await sbProfile();
+  if(!s||!s.user){ box.innerHTML='<p class="note">Please sign in to the portal first, then open the POC template from there.</p>'; return; }
+  var res=await SB.from('poc_submissions').select('id,customer_name,submission_status,updated_at,created_at,payload').eq('user_id',s.user.id).order('updated_at',{ascending:false});
+  if(res.error){ box.innerHTML='<p class="note">Could not load: '+esc(res.error.message)+'</p>'; return; }
+  var rows=res.data||[];
+  if(filterEmail){ var f=filterEmail.toLowerCase(); rows=rows.filter(function(r){ return ((((r.payload&&r.payload["Customer Email"])||'')+'').toLowerCase().indexOf(f)>=0); }); }
+  window.__pocs=rows;
+  if(!rows.length){ box.innerHTML='<p class="note">No saved or submitted POCs found'+(filterEmail?' for that email':'')+'.</p>'; return; }
+  var h='<table class="rtable" style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr><th>Customer Email</th><th>Account</th><th>Status</th><th>Updated</th><th></th></tr></thead><tbody>';
+  rows.forEach(function(r){ var em=(r.payload&&r.payload["Customer Email"])||''; var st=r.submission_status||'Draft'; var up=((r.updated_at||r.created_at)||'').slice(0,10);
+    h+='<tr><td>'+esc(em)+'</td><td>'+esc(r.customer_name||'')+'</td><td>'+esc(st)+'</td><td>'+esc(up)+'</td><td><button class="ghost" type="button" onclick="openPOC(\''+r.id+'\')">Open</button></td></tr>'; });
+  box.innerHTML=h+'</tbody></table>';
+}
+function openPOC(id){
+  var r=(window.__pocs||[]).find(function(x){ return String(x.id)===String(id); });
+  if(!r)return;
+  setReadOnly(false); form.reset(); populate(r.payload||{}); applyScope(); applyCompany();
+  chooserEl.style.display='none'; retrieveEl.style.display='none'; setFormVisible(true);
+  if((r.submission_status||'')==='Final'){
+    localStorage.removeItem(DRAFT_ID_KEY); localStorage.removeItem(KEY); setReadOnly(true);
+    show('This POC was submitted as FINAL — shown read-only. Use ‘Save / Print as PDF’, or go Back and start a New POC.',true);
+  } else {
+    localStorage.setItem(DRAFT_ID_KEY, r.id); try{ localStorage.setItem(KEY, JSON.stringify(r.payload||{})); }catch(e){}
+    show('Draft loaded. Continue editing, then ‘Save draft’ or ‘Submit (final)’ when complete.',true);
+  }
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
 // POC duration: append " days" when a bare number is entered
 const _dur = document.getElementById('pocDuration');
 if(_dur){ _dur.addEventListener('blur', function(){
@@ -451,7 +509,7 @@ if(_dur){ _dur.addEventListener('blur', function(){
   if(/^\d+(\.\d+)?$/.test(v)) { _dur.value = v + " days"; save(); }
 }); }
 
-restore(); applyScope(); applyCompany();
-const _pref = emailEl(); if(_pref && _pref.value) document.getElementById('resumeEmail').value = _pref.value;
+applyScope(); applyCompany();
+setFormVisible(false); showChooser();
 </script>
 </body></html>

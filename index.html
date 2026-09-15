@@ -289,6 +289,9 @@ async function adminDashboard(){clearCharts();dashF={relation:"",type:"",product
   const dist=acts.filter(a=>a.relation==="Distributor"),part=acts.filter(a=>a.relation==="Partner");
   const cT=(arr,t)=>arr.filter(x=>x.type===t).length;
   const prodOpts=[...new Set(acts.flatMap(a=>a.products))].map(p=>'<option>'+esc(p)+'</option>').join("");
+  const distOrgs=[...new Set(acts.filter(a=>a.relation==="Distributor").map(a=>a.org))].filter(Boolean).sort();
+  const distPOC=distOrgs.map(o=>acts.filter(a=>a.org===o&&a.type==="POC").length);
+  const distDemo=distOrgs.map(o=>acts.filter(a=>a.org===o&&a.type==="Demo").length);
   app.innerHTML=`<div class="wrap"><h1>Activity Dashboard</h1><p class="sub">All POC &amp; Demo activity, with Distributor vs Partner segregation. Click any chart to filter.</p>
     <div class="kpis"><div class="kpi"><div class="n">${acts.length}</div><div class="l">Total activities</div></div>
       <div class="kpi"><div class="n">${nPOC}</div><div class="l">POCs</div></div><div class="kpi"><div class="n">${nDemo}</div><div class="l">Demos</div></div>
@@ -297,6 +300,7 @@ async function adminDashboard(){clearCharts();dashF={relation:"",type:"",product
       <div class="kpi part"><div class="n">${part.length}</div><div class="l">Partner activities &nbsp;(${cT(part,"POC")} POC / ${cT(part,"Demo")} Demo)</div></div></div>
     <div class="charts"><div class="chartbox"><h3>Distributor vs Partner (by type)</h3><canvas id="cRel"></canvas></div><div class="chartbox"><h3>Activity type</h3><canvas id="cType"></canvas></div></div>
     <div class="charts"><div class="chartbox"><h3>Activities by product</h3><canvas id="cProd"></canvas></div><div class="chartbox"><h3>Activities by organization</h3><canvas id="cOrg"></canvas></div></div>
+    <div class="charts"><div class="chartbox" style="grid-column:1 / -1"><h3>Distributor-wise POC &amp; Demo</h3><canvas id="cDist"></canvas></div></div>
     <div class="card"><div class="toolbar">
       <label style="margin:0">Category</label><select id="fRel" style="width:auto" onchange="onDashCtl()"><option value="">All</option><option>Distributor</option><option>Partner</option></select>
       <label style="margin:0">Type</label><select id="fType" style="width:auto" onchange="onDashCtl()"><option value="">All</option><option>POC</option><option>Demo</option></select>
@@ -306,7 +310,8 @@ async function adminDashboard(){clearCharts();dashF={relation:"",type:"",product
   if(window.Chart){
     stackedBar("cRel",["Distributor","Partner"],[{label:"POC",data:[cT(dist,"POC"),cT(part,"POC")],color:"#01B0FE"},{label:"Demo",data:[cT(dist,"Demo"),cT(part,"Demo")],color:"#00D15F"}],(l,ds)=>setDash({relation:l,type:ds}));
     doughnut("cType",["POC","Demo"],[nPOC,nDemo],["#01B0FE","#00D15F"],(l)=>setDash({type:l}));
-    barByProducts("cProd",acts,(l)=>setDash({product:l}));barByKey("cOrg",acts,"org",(l)=>setDash({org:l}));}
+    barByProducts("cProd",acts,(l)=>setDash({product:l}));barByKey("cOrg",acts,"org",(l)=>setDash({org:l}));
+    stackedBar("cDist",distOrgs,[{label:"POC",data:distPOC,color:"#01B0FE"},{label:"Demo",data:distDemo,color:"#00D15F"}],(l,ds)=>setDash({relation:"Distributor",org:l,type:ds}));}
   renderDashTable();
 }
 function onDashCtl(){dashF.relation=gv("fRel");dashF.type=gv("fType");dashF.product=gv("fProd");dashF.org="";renderDashTable();}
