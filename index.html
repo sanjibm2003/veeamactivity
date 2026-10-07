@@ -158,9 +158,13 @@ async function fetchMyActivities(){
     SB.from('demo_activities').select('*').eq('user_id',me.id)]);
   return toActs(pocs||[],demos||[]);
 }
+function bomFromPayload(p){if(!p)return"";var parts=[];function g(k,l){if(p[k]!=null&&String(p[k]).trim()!=="")parts.push(l+": "+p[k]);}
+  g("VDP Pack(s) required (quantity)","VDP Pack(s)");g("VDC Vault Foundation required (in TB)","Vault Foundation (TB)");g("VDC Vault Advanced required (in TB)","Vault Advanced (TB)");
+  g("How many Microsoft 365 user licenses are required?","M365 licenses");g("How many Entra ID licenses are required?","Entra ID licenses");
+  g("How much capacity is required (in TB)?","Azure capacity (TB)");g("How many Salesforce user licenses are required?","Salesforce licenses");return parts.join("; ");}
 function toActs(pocs,demos){
   const p=pocs.map(x=>({type:"POC",relation:x.relation||"",org:x.org_name||"",engineer:(x.payload&&x.payload["Conducted by — Name"])||"",email:x.user_email||"",customer:x.customer_name||"",products:x.products||[],bom:x.bom||"",stage:x.submission_status==="Final"?"Completed":"On-going",result:x.outcome||"",updated:(x.updated_at||x.created_at||"").slice(0,10)}));
-  const d=demos.map(x=>({type:"Demo",relation:x.relation||"",org:x.org_name||"",engineer:(x.payload&&x.payload["Name of person conducting demo"])||"",email:x.user_email||"",customer:x.customer_name||"",products:x.products||[],bom:"",stage:"Completed",result:x.outcome||"",updated:(x.created_at||"").slice(0,10)}));
+  const d=demos.map(x=>({type:"Demo",relation:x.relation||"",org:x.org_name||"",engineer:(x.payload&&x.payload["Name of person conducting demo"])||"",email:x.user_email||"",customer:x.customer_name||"",products:x.products||[],bom:bomFromPayload(x.payload),stage:"Completed",result:x.outcome||"",updated:(x.created_at||"").slice(0,10)}));
   return p.concat(d);
 }
 let userF={type:"",product:""}, myActs=[];
